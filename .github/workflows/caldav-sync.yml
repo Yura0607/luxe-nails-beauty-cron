@@ -1,0 +1,47 @@
+name: CalDAV sync
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger CalDAV cron
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set +x
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "CRON_SECRET is not set in repository secrets"
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/caldav-cron-body.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
+            --max-time 90 \
+            "https://luxe-nails-beauty-salon.vercel.app/api/cron/caldav")
+          echo "HTTP status: ${code}"
+          python3 -c '
+          import json, sys
+          raw = open("/tmp/caldav-cron-body.json").read()
+          try:
+              data = json.loads(raw)
+          except Exception:
+              print("body_len=", len(raw))
+              sys.exit(0)
+          print("ok=", data.get("ok"))
+          print("count=", data.get("count"))
+          if data.get("error"):
+              print("error=", data.get("error"))
+          '
+          if [ "${code}" != "200" ]; then
+            echo "Expected HTTP 200 from /api/cron/caldav"
+            exit 1
+          fi
